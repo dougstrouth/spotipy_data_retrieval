@@ -339,10 +339,8 @@ def get_top_n_items(df: pd.DataFrame, display_cols: List[str], sort_col: str, n:
 # --- Artist & Album Analysis ---
 
 def get_top_n_artists(df: pd.DataFrame, n: int = 25) -> Optional[pd.DataFrame]:
-    """Counts track occurrences per artist and returns the top N."""
-    # Uses 'artist_names' for readability if available, falls back to IDs
-    id_col = 'artist_ids'
-    name_col = 'artist_names'
+    """Counts track occurrences per artist ID and returns the top N."""
+    id_col = 'artist_ids' # Focus only on the ID column
 
     if id_col not in df.columns:
         print(f"Warning: Missing '{id_col}' column for artist analysis.")
@@ -351,68 +349,47 @@ def get_top_n_artists(df: pd.DataFrame, n: int = 25) -> Optional[pd.DataFrame]:
         print(f"Warning: Column '{id_col}' contains no valid data.")
         return None
 
-    # Explode both IDs and Names simultaneously if names are available
-    has_names = name_col in df.columns and not df[name_col].isnull().all()
-    cols_to_explode = [id_col]
-    if has_names:
-        cols_to_explode.append(name_col)
+    # Work with the ID column
+    temp_df = df[[id_col]].dropna(subset=[id_col]).copy()
 
-    temp_df = df[cols_to_explode].dropna(subset=[id_col]).copy()
+    # --- Apply split and ensure object dtype for lists ---
+    # Apply split. Result is a Series containing lists or NaN
+    split_col_series = temp_df[id_col].str.split(',')
+    # Assign this Series back. Pandas will typically handle dtype adjustment,
+    # or we can force object dtype if needed.
+    temp_df[id_col] = split_col_series.astype('object') # Force object dtype to hold lists
+    # --- END Splitting ---
 
-    # --- FIX: Apply split and ensure object dtype for lists ---
-    for col in cols_to_explode:
-        # Apply split. Result is a Series containing lists or NaN
-        split_col_series = temp_df[col].str.split(',')
-        # Assign this Series back. Pandas will typically handle dtype adjustment,
-        # or we can force object dtype if needed.
-        temp_df[col] = split_col_series.astype('object') # Force object dtype to hold lists
-    # --- END FIX ---
-
-    # Now temp_df[col] contains lists (or NaN) and has object dtype
-
-    # --- Use DataFrame.explode() directly ---
+    # --- Explode ONLY the artist_ids column ---
     try:
-        # Explode columns which now contain lists
-        exploded = temp_df.explode(cols_to_explode)
+        exploded = temp_df.explode(id_col) # Explode only the ID column
     except ValueError as e:
-        # Handle potential errors if columns aren't list-like after split
-        print(f"Error during DataFrame explode: {e}")
-        print("Check if artist_ids/artist_names columns contain valid comma-separated strings.")
+        # Handle potential errors if column isn't list-like after split
+        print(f"Error during DataFrame explode on '{id_col}': {e}")
         return None
     # --- END Explode ---
 
-
     if exploded is not None and not exploded.empty:
         # Strip whitespace after exploding
-        # Important: Handle potential non-string types after explode if source had NaN
         exploded[id_col] = exploded[id_col].astype(str).str.strip()
-        if has_names:
-             exploded[name_col] = exploded[name_col].astype(str).str.strip()
 
-        # Filter out any potential empty strings after stripping
-        # Also filter out 'nan' strings resulting from NaNs if necessary
+        # Filter out any potential empty strings or 'nan' strings
         exploded = exploded[(exploded[id_col] != '') & (exploded[id_col].str.lower() != 'nan')]
 
-        # Group by ID, get the first name associated (usually the same), count tracks
-        grouped = exploded.groupby(id_col)
+        if exploded.empty:
+             print("Warning: No valid artist IDs found after exploding and cleaning.")
+             return None
 
-        if has_names:
-            counts = grouped.agg(
-                artist_name=(name_col, 'first'),
-                track_count=(id_col, 'size')
-            )
-        else:
-             counts = grouped.agg(
-                track_count=(id_col, 'size')
-            )
-        
-        top_artists = counts.sort_values('track_count', ascending=False).head(n)
-        return top_artists.reset_index()
+        # Group by ID and count occurrences
+        counts = exploded.groupby(id_col).size() # Group by the exploded ID column
 
+        top_artists = counts.sort_values(ascending=False).head(n)
+
+        # Return DataFrame with 'artist_ids' and 'track_count'
+        return top_artists.reset_index(name='track_count')
     else:
         print("Warning: No valid artists found after exploding.")
         return None
-
 
 def get_top_n_albums(df: pd.DataFrame, n: int = 25) -> Optional[pd.DataFrame]:
     """Counts track occurrences per album and returns the top N."""
@@ -457,7 +434,7 @@ def plot_genre_distribution(df: pd.DataFrame, top_n: int = 20) -> Optional[plt.A
         return None
 
     plt.figure(figsize=(12, max(6, top_n * 0.4))) # Adjust height slightly
-    ax = sns.barplot(x=counts.values, y=counts.index, palette="viridis")
+    ax = sns.barplot(x=counts.values, y=counts.index, hue=counts.index, palette="viridis")
     ax.set_title(f"Top {top_n} Genres Distribution")
     ax.set_xlabel("Number of Tracks")
     ax.set_ylabel("Genre")
@@ -502,9 +479,9 @@ def plot_feature_by_genre(df: pd.DataFrame, feature: str, top_n_genres: int = 10
     order = top_genres # Plot in order of frequency
 
     if plot_type == 'box':
-        ax = sns.boxplot(data=plot_df, y='genre', x=feature, order=order, palette="viridis")
+        ax = sns.boxplot(data=plot_df, y='genre', hue='genre', x=feature, order=order, palette="viridis")
     elif plot_type == 'violin':
-        ax = sns.violinplot(data=plot_df, y='genre', x=feature, order=order, palette="viridis", inner='quartile')
+        ax = sns.violinplot(data=plot_df, y='genre',hue='genre', x=feature, order=order, palette="viridis", inner='quartile')
     else:
         print("Warning: plot_type must be 'box' or 'violin'. Defaulting to 'box'.")
         ax = sns.boxplot(data=plot_df, y='genre', x=feature, order=order, palette="viridis")
