@@ -296,7 +296,7 @@ def enrich_track_dataframe(spotify_client: Optional[spotipy.Spotify], track_df: 
     # --- Collect Artist IDs ---
     all_artist_ids = set()
     # *** MODIFIED: Look for 'album_artist_ids' ***
-    id_column_name = 'album_artist_ids'
+    id_column_name = 'artist_ids'
     if id_column_name in enriched_df.columns:
         # Ensure the column exists and handle potential missing values (NaN) before splitting
         for ids_str in enriched_df[id_column_name].dropna():
@@ -596,6 +596,6 @@ if __name__ == "__main__":
     print("Running enrichment and analysis using existing base file...")
     client = create_spotify_client()
     if client:
-        main(client, skip_collection=False) # Set to True to load from file
+        main(client, skip_collection=True) # Set to True to load from file
     else:
         print("Could not create Spotify client. Exiting.")
